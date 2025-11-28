@@ -11,10 +11,10 @@ const CONTRACT_ABI = [
   "function maxPerTx() view returns (uint256)",
   "function maxPerWallet() view returns (uint256)",
   "function maxSupply() view returns (uint256)",
-  "function totalSupply() view returns (uint256)",
+  "function totalMinted() view returns (uint256)",
   "function walletMints(address) view returns (uint256)",
   "function ticketsPer24h() view returns (uint256)",
-  "function previewFreeMints(address) view returns (uint256)", // still in ABI but not used
+  "function previewFreeMints(address) view returns (uint256)",
   "function mintTickets(uint256 quantity) payable",
 ];
 
@@ -38,11 +38,14 @@ export default function Home() {
   const [maxPerTx, setMaxPerTx] = useState<number>(0);
   const [maxPerWallet, setMaxPerWallet] = useState<number>(0);
   const [maxSupply, setMaxSupply] = useState<number>(0);
-  const [totalSupply, setTotalSupply] = useState<number>(0);
+  const [totalSupply, setTotalSupply] = useState<number>(0); // this will hold totalMinted()
   const [walletMints, setWalletMints] = useState<number>(0);
   const [ticketsPer24h, setTicketsPer24h] = useState<number>(0);
 
   const [quantity, setQuantity] = useState<number>(1);
+  const [freeMintsRemaining, setFreeMintsRemaining] = useState<number | null>(
+    null
+  );
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [isMinting, setIsMinting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -137,6 +140,7 @@ export default function Home() {
     setWalletAddress(null);
     setChainId(null);
     setWalletMints(0);
+    setFreeMintsRemaining(null);
     setIsPohVerified(null);
     setIsCheckingPoh(false);
     setErrorMessage(null);
@@ -249,11 +253,12 @@ export default function Home() {
         signer
       );
 
-      const [mp, mpt, mpw, ts, ms, t24] = await Promise.all([
+      // NOTE: totalMinted() instead of totalSupply()
+      const [mp, mpt, mpw, tm, ms, t24] = await Promise.all([
         contract.mintPrice(),
         contract.maxPerTx(),
         contract.maxPerWallet(),
-        contract.totalSupply(),
+        contract.totalMinted(),
         contract.maxSupply(),
         contract.ticketsPer24h(),
       ]);
@@ -261,7 +266,7 @@ export default function Home() {
       setMintPrice(mp);
       setMaxPerTx(mpt.toNumber());
       setMaxPerWallet(mpw.toNumber());
-      setTotalSupply(ts.toNumber());
+      setTotalSupply(tm.toNumber()); // minted so far
       setMaxSupply(ms.toNumber());
       setTicketsPer24h(t24.toNumber());
 
@@ -269,6 +274,10 @@ export default function Home() {
         try {
           const wm = await contract.walletMints(address);
           setWalletMints(wm.toNumber());
+
+          // Also preview free mints for this wallet (always 0 for this collection, but harmless)
+          const free = await contract.previewFreeMints(address);
+          setFreeMintsRemaining(free.toNumber());
         } catch (inner) {
           console.warn("Could not load wallet-specific data:", inner);
         }
@@ -337,11 +346,21 @@ export default function Home() {
         signer
       );
 
-      // All mints are paid mints (no free mints for this collection)
-      const requiredValue = mintPrice.mul(quantity);
+      // Re-check free mints on-chain right before mint, for safety.
+      // For T-Baggiez this will always be 0, but logic stays generic.
+      let freeForThisTx = 0;
+      if (freeMintsRemaining !== null) {
+        freeForThisTx = Math.min(quantity, freeMintsRemaining);
+      } else {
+        const free = await contract.previewFreeMints(walletAddress);
+        freeForThisTx = Math.min(quantity, free.toNumber());
+      }
+
+      const paidForThisTx = quantity - freeForThisTx;
+      const requiredValue = mintPrice.mul(paidForThisTx);
 
       // PRE-CHECK: does the wallet have enough ETH for the mint value?
-      if (quantity > 0) {
+      if (paidForThisTx > 0) {
         const balance = await provider.getBalance(walletAddress);
         if (balance.lt(requiredValue)) {
           setErrorMessage("You need more ETH");
@@ -434,6 +453,7 @@ export default function Home() {
       if (accounts.length === 0) {
         setWalletAddress(null);
         setWalletMints(0);
+        setFreeMintsRemaining(null);
         setIsPohVerified(null);
       } else {
         const acc = accounts[0];
@@ -491,10 +511,20 @@ export default function Home() {
     ? ethers.utils.formatEther(mintPrice)
     : "---";
 
+  // We still keep freeMintsRemaining logic but it's always 0 for this collection
+  const freeMintsText =
+    freeMintsRemaining === null
+      ? "Checking free mints..."
+      : `${freeMintsRemaining} remaining (max 8 total)`;
+
+  let paidForThisTx = 0;
   let ethCostForThisTx = "0";
 
   if (mintPrice) {
-    const requiredValue = mintPrice.mul(quantity);
+    const freeForThisTx =
+      freeMintsRemaining !== null ? Math.min(quantity, freeMintsRemaining) : 0;
+    paidForThisTx = quantity - freeForThisTx;
+    const requiredValue = mintPrice.mul(paidForThisTx);
     ethCostForThisTx = ethers.utils.formatEther(requiredValue);
   }
 
@@ -504,7 +534,7 @@ export default function Home() {
     if (isCheckingPoh) return "Checking PoH…";
     if (isPohVerified === false) return "Click here to verify POH";
     if (isMinting) return "Minting...";
-    return "Mint T-Baggiez";
+    return "Mint Tickets";
   })();
 
   // Disable while busy (but not when PoH is false, so they can click the link)
@@ -608,7 +638,7 @@ export default function Home() {
             <div className="info-box">
               <span className="label">Supply</span>
               <span className="value">
-                {maxSupply ? `${totalSupply} / ${maxSupply}` : totalSupply || "---"}
+                {totalSupply} / {maxSupply || 3333}
               </span>
             </div>
             <div className="info-box">
@@ -634,6 +664,7 @@ export default function Home() {
                 {walletAddress ? `${walletMints} minted` : "-"}
               </span>
             </div>
+            {/* Free mints box removed from UI intentionally */}
           </div>
 
           <div className="mint-controls">
@@ -804,13 +835,11 @@ export default function Home() {
           text-transform: uppercase;
           letter-spacing: 0.08em;
           cursor: pointer;
-          transition: background 0.15s ease, transform 0.15s ease;
         }
 
         .disconnect-btn:hover,
         .switch-network-btn:hover {
           background: rgba(30, 64, 175, 0.7);
-          transform: translateY(-1px);
         }
 
         /* PoH row */
@@ -932,8 +961,6 @@ export default function Home() {
           color: white;
           cursor: pointer;
           font-size: 1rem;
-          transition: transform 0.12s ease, box-shadow 0.12s ease,
-            opacity 0.12s ease, background 0.12s ease;
         }
 
         .quantity-controls button:disabled {
@@ -1018,13 +1045,11 @@ export default function Home() {
           pointer-events: none;
           z-index: 0;
           animation: floatLogo 10s ease-in-out infinite alternate;
-          animation-fill-mode: both;
         }
 
         .bg-logo img {
           max-width: 350px; /* ~25% larger than before */
           height: auto;
-          display: block;
         }
 
         .bg-img {
@@ -1032,17 +1057,14 @@ export default function Home() {
           opacity: 0.26;
           pointer-events: none;
           z-index: 0;
-          animation-duration: 18s;
+          animation-duration: 12s;
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
-          animation-fill-mode: both; /* prevents initial pop */
-          will-change: transform;
         }
 
         .bg-img img {
           max-width: 340px;
           height: auto;
-          display: block;
         }
 
         .bg-img-1 {
@@ -1074,7 +1096,7 @@ export default function Home() {
             transform: translate(-50%, 0px) scale(1);
           }
           100% {
-            transform: translate(-50%, -6px) scale(1.04);
+            transform: translate(-50%, -6px) scale(1.06);
           }
         }
 
@@ -1083,34 +1105,34 @@ export default function Home() {
             transform: translate(0px, 0px) rotate(-2deg) scale(1);
           }
           50% {
-            transform: translate(8px, -4px) rotate(-3deg) scale(1.06);
+            transform: translate(10px, -6px) rotate(-4deg) scale(1.25);
           }
           100% {
-            transform: translate(-4px, 4px) rotate(-2.5deg) scale(1.03);
+            transform: translate(-4px, 4px) rotate(-3deg) scale(1.12);
           }
         }
 
         @keyframes float2 {
           0% {
-            transform: translate(0px, 0px) rotate(2deg) scale(1.02);
+            transform: translate(0px, 0px) rotate(2deg) scale(1.05);
           }
           50% {
-            transform: translate(-10px, -6px) rotate(3deg) scale(1.06);
+            transform: translate(-12px, -10px) rotate(4deg) scale(1.25);
           }
           100% {
-            transform: translate(6px, 4px) rotate(2.5deg) scale(1.03);
+            transform: translate(8px, 6px) rotate(3deg) scale(1.08);
           }
         }
 
         @keyframes float3 {
           0% {
-            transform: translate(0px, 0px) rotate(3deg) scale(0.9);
+            transform: translate(0px, 0px) rotate(3deg) scale(0.78);
           }
           50% {
-            transform: translate(-8px, 6px) rotate(4deg) scale(0.96);
+            transform: translate(-14px, 8px) rotate(5deg) scale(1.05);
           }
           100% {
-            transform: translate(4px, -4px) rotate(3.5deg) scale(0.93);
+            transform: translate(6px, -4px) rotate(4deg) scale(0.9);
           }
         }
 
@@ -1119,10 +1141,10 @@ export default function Home() {
             transform: translate(0px, 0px) rotate(-3deg) scale(1);
           }
           50% {
-            transform: translate(10px, 8px) rotate(-4deg) scale(1.06);
+            transform: translate(12px, 10px) rotate(-5deg) scale(1.25);
           }
           100% {
-            transform: translate(-6px, -6px) rotate(-3.5deg) scale(1.03);
+            transform: translate(-6px, -6px) rotate(-4deg) scale(1.1);
           }
         }
 
