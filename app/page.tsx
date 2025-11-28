@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
 
-// BaggiezTickets on Linea Mainnet
-const CONTRACT_ADDRESS = "0xc4Ab0d9FAcFAc11104E640718dCaB4df782428CC";
+// T-Baggiez NFT on Linea Mainnet
+const CONTRACT_ADDRESS = "0x0e1F9EDF5a647B6cD305CeC707e050EC41395d85";
 
 const CONTRACT_ABI = [
   "function mintPrice() view returns (uint256)",
@@ -578,8 +578,8 @@ export default function Home() {
       <div className="card-wrapper">
         <div className="mint-card">
           <div className="mint-card-header">
-            <h1>T3 Baggiez Tickets</h1>
-            <p>Secure your Baggiez tickets before they&apos;re gone.</p>
+            <h1>Official T-Baggiez NFTs</h1>
+            <p>The ultimate $TBAG flex</p>
           </div>
 
           <div className="status-row">
@@ -650,7 +650,9 @@ export default function Home() {
             <div className="info-box">
               <span className="label">24h Limit</span>
               <span className="value">
-                {ticketsPer24h > 0 ? `${ticketsPer24h} tickets` : "No limit"}
+                {ticketsPer24h > 0
+                  ? `${ticketsPer24h} T-Baggiez`
+                  : "No limit"}
               </span>
             </div>
             <div className="info-box">
