@@ -38,7 +38,7 @@ export default function Home() {
   const [maxPerTx, setMaxPerTx] = useState<number>(0);
   const [maxPerWallet, setMaxPerWallet] = useState<number>(0);
   const [maxSupply, setMaxSupply] = useState<number>(0);
-  const [totalSupply, setTotalSupply] = useState<number>(0); // this will hold totalMinted()
+  const [totalSupply, setTotalSupply] = useState<number>(0); // totalMinted()
   const [walletMints, setWalletMints] = useState<number>(0);
   const [ticketsPer24h, setTicketsPer24h] = useState<number>(0);
 
@@ -1060,6 +1060,8 @@ export default function Home() {
           animation-duration: 12s;
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
+          animation-direction: alternate; /* smoother loop, no jump */
+          will-change: transform; /* reduce jitter */
         }
 
         .bg-img img {
@@ -1071,24 +1073,28 @@ export default function Home() {
           top: 10%;
           left: 5%;
           animation-name: float1;
+          transform: translate(0px, 0px) rotate(-2deg) scale(1);
         }
 
         .bg-img-2 {
           bottom: 6%;
           left: 7%;
           animation-name: float2;
+          transform: translate(0px, 0px) rotate(2deg) scale(1.05);
         }
 
         .bg-img-3 {
           top: 12%;
           right: 6%;
           animation-name: float3;
+          transform: translate(0px, 0px) rotate(3deg) scale(0.78);
         }
 
         .bg-img-4 {
           bottom: 4%;
           right: 7%;
           animation-name: float4;
+          transform: translate(0px, 0px) rotate(-3deg) scale(1);
         }
 
         @keyframes floatLogo {
