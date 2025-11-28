@@ -534,7 +534,7 @@ export default function Home() {
     if (isCheckingPoh) return "Checking PoH…";
     if (isPohVerified === false) return "Click here to verify POH";
     if (isMinting) return "Minting...";
-    return "Mint Tickets";
+    return "Mint T-Baggiez";
   })();
 
   // Disable while busy (but not when PoH is false, so they can click the link)
