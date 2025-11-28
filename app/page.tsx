@@ -14,7 +14,7 @@ const CONTRACT_ABI = [
   "function totalSupply() view returns (uint256)",
   "function walletMints(address) view returns (uint256)",
   "function ticketsPer24h() view returns (uint256)",
-  "function previewFreeMints(address) view returns (uint256)",
+  "function previewFreeMints(address) view returns (uint256)", // still in ABI but not used
   "function mintTickets(uint256 quantity) payable",
 ];
 
@@ -43,9 +43,6 @@ export default function Home() {
   const [ticketsPer24h, setTicketsPer24h] = useState<number>(0);
 
   const [quantity, setQuantity] = useState<number>(1);
-  const [freeMintsRemaining, setFreeMintsRemaining] = useState<number | null>(
-    null
-  );
   const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
   const [isMinting, setIsMinting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -140,7 +137,6 @@ export default function Home() {
     setWalletAddress(null);
     setChainId(null);
     setWalletMints(0);
-    setFreeMintsRemaining(null);
     setIsPohVerified(null);
     setIsCheckingPoh(false);
     setErrorMessage(null);
@@ -273,10 +269,6 @@ export default function Home() {
         try {
           const wm = await contract.walletMints(address);
           setWalletMints(wm.toNumber());
-
-          // Also preview free mints for this wallet
-          const free = await contract.previewFreeMints(address);
-          setFreeMintsRemaining(free.toNumber());
         } catch (inner) {
           console.warn("Could not load wallet-specific data:", inner);
         }
@@ -345,20 +337,11 @@ export default function Home() {
         signer
       );
 
-      // Re-check free mints on-chain right before mint, for safety
-      let freeForThisTx = 0;
-      if (freeMintsRemaining !== null) {
-        freeForThisTx = Math.min(quantity, freeMintsRemaining);
-      } else {
-        const free = await contract.previewFreeMints(walletAddress);
-        freeForThisTx = Math.min(quantity, free.toNumber());
-      }
-
-      const paidForThisTx = quantity - freeForThisTx;
-      const requiredValue = mintPrice.mul(paidForThisTx);
+      // All mints are paid mints (no free mints for this collection)
+      const requiredValue = mintPrice.mul(quantity);
 
       // PRE-CHECK: does the wallet have enough ETH for the mint value?
-      if (paidForThisTx > 0) {
+      if (quantity > 0) {
         const balance = await provider.getBalance(walletAddress);
         if (balance.lt(requiredValue)) {
           setErrorMessage("You need more ETH");
@@ -451,7 +434,6 @@ export default function Home() {
       if (accounts.length === 0) {
         setWalletAddress(null);
         setWalletMints(0);
-        setFreeMintsRemaining(null);
         setIsPohVerified(null);
       } else {
         const acc = accounts[0];
@@ -509,19 +491,10 @@ export default function Home() {
     ? ethers.utils.formatEther(mintPrice)
     : "---";
 
-  const freeMintsText =
-    freeMintsRemaining === null
-      ? "Checking free mints..."
-      : `${freeMintsRemaining} remaining (max 8 total)`;
-
-  let paidForThisTx = 0;
   let ethCostForThisTx = "0";
 
   if (mintPrice) {
-    const freeForThisTx =
-      freeMintsRemaining !== null ? Math.min(quantity, freeMintsRemaining) : 0;
-    paidForThisTx = quantity - freeForThisTx;
-    const requiredValue = mintPrice.mul(paidForThisTx);
+    const requiredValue = mintPrice.mul(quantity);
     ethCostForThisTx = ethers.utils.formatEther(requiredValue);
   }
 
@@ -531,7 +504,7 @@ export default function Home() {
     if (isCheckingPoh) return "Checking PoH…";
     if (isPohVerified === false) return "Click here to verify POH";
     if (isMinting) return "Minting...";
-    return "Mint Tickets";
+    return "Mint T-Baggiez";
   })();
 
   // Disable while busy (but not when PoH is false, so they can click the link)
@@ -635,7 +608,7 @@ export default function Home() {
             <div className="info-box">
               <span className="label">Supply</span>
               <span className="value">
-                {totalSupply} / {maxSupply || 15000}
+                {maxSupply ? `${totalSupply} / ${maxSupply}` : totalSupply || "---"}
               </span>
             </div>
             <div className="info-box">
@@ -660,10 +633,6 @@ export default function Home() {
               <span className="value">
                 {walletAddress ? `${walletMints} minted` : "-"}
               </span>
-            </div>
-            <div className="info-box">
-              <span className="label">Free mints</span>
-              <span className="value small">{freeMintsText}</span>
             </div>
           </div>
 
@@ -835,11 +804,13 @@ export default function Home() {
           text-transform: uppercase;
           letter-spacing: 0.08em;
           cursor: pointer;
+          transition: background 0.15s ease, transform 0.15s ease;
         }
 
         .disconnect-btn:hover,
         .switch-network-btn:hover {
           background: rgba(30, 64, 175, 0.7);
+          transform: translateY(-1px);
         }
 
         /* PoH row */
@@ -961,6 +932,8 @@ export default function Home() {
           color: white;
           cursor: pointer;
           font-size: 1rem;
+          transition: transform 0.12s ease, box-shadow 0.12s ease,
+            opacity 0.12s ease, background 0.12s ease;
         }
 
         .quantity-controls button:disabled {
@@ -1045,11 +1018,13 @@ export default function Home() {
           pointer-events: none;
           z-index: 0;
           animation: floatLogo 10s ease-in-out infinite alternate;
+          animation-fill-mode: both;
         }
 
         .bg-logo img {
           max-width: 350px; /* ~25% larger than before */
           height: auto;
+          display: block;
         }
 
         .bg-img {
@@ -1057,14 +1032,17 @@ export default function Home() {
           opacity: 0.26;
           pointer-events: none;
           z-index: 0;
-          animation-duration: 12s;
+          animation-duration: 18s;
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
+          animation-fill-mode: both; /* prevents initial pop */
+          will-change: transform;
         }
 
         .bg-img img {
           max-width: 340px;
           height: auto;
+          display: block;
         }
 
         .bg-img-1 {
@@ -1096,7 +1074,7 @@ export default function Home() {
             transform: translate(-50%, 0px) scale(1);
           }
           100% {
-            transform: translate(-50%, -6px) scale(1.06);
+            transform: translate(-50%, -6px) scale(1.04);
           }
         }
 
@@ -1105,34 +1083,34 @@ export default function Home() {
             transform: translate(0px, 0px) rotate(-2deg) scale(1);
           }
           50% {
-            transform: translate(10px, -6px) rotate(-4deg) scale(1.25);
+            transform: translate(8px, -4px) rotate(-3deg) scale(1.06);
           }
           100% {
-            transform: translate(-4px, 4px) rotate(-3deg) scale(1.12);
+            transform: translate(-4px, 4px) rotate(-2.5deg) scale(1.03);
           }
         }
 
         @keyframes float2 {
           0% {
-            transform: translate(0px, 0px) rotate(2deg) scale(1.05);
+            transform: translate(0px, 0px) rotate(2deg) scale(1.02);
           }
           50% {
-            transform: translate(-12px, -10px) rotate(4deg) scale(1.25);
+            transform: translate(-10px, -6px) rotate(3deg) scale(1.06);
           }
           100% {
-            transform: translate(8px, 6px) rotate(3deg) scale(1.08);
+            transform: translate(6px, 4px) rotate(2.5deg) scale(1.03);
           }
         }
 
         @keyframes float3 {
           0% {
-            transform: translate(0px, 0px) rotate(3deg) scale(0.78);
+            transform: translate(0px, 0px) rotate(3deg) scale(0.9);
           }
           50% {
-            transform: translate(-14px, 8px) rotate(5deg) scale(1.05);
+            transform: translate(-8px, 6px) rotate(4deg) scale(0.96);
           }
           100% {
-            transform: translate(6px, -4px) rotate(4deg) scale(0.9);
+            transform: translate(4px, -4px) rotate(3.5deg) scale(0.93);
           }
         }
 
@@ -1141,10 +1119,10 @@ export default function Home() {
             transform: translate(0px, 0px) rotate(-3deg) scale(1);
           }
           50% {
-            transform: translate(12px, 10px) rotate(-5deg) scale(1.25);
+            transform: translate(10px, 8px) rotate(-4deg) scale(1.06);
           }
           100% {
-            transform: translate(-6px, -6px) rotate(-4deg) scale(1.1);
+            transform: translate(-6px, -6px) rotate(-3.5deg) scale(1.03);
           }
         }
 
